@@ -113,9 +113,9 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.SSH_HOST }}
+          host: ${{ secrets.PROD_SERVER_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
           script: |
             cd ~/projects/TP2
             docker login ${{ secrets.REGISTRY_HOST }} \
