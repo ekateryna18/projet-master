@@ -10,4 +10,8 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy' })
 })
 
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`Running on port ${PORT}`))
+}
+
 module.exports = app
