@@ -39,59 +39,116 @@ jobs:
         if: always()
         run: |
           python3 - <<'EOF'
-          import json, os, sys
+          import json, os
           from datetime import datetime
 
           with open('semgrep-results.json') as f:
               data = json.load(f)
 
-          results = data.get('results', [])
+          results       = data.get('results', [])
+          errors        = data.get('errors', [])
+          scanned       = data.get('paths', {}).get('scanned', [])
+          timing        = data.get('time', {})
+          version       = data.get('version', 'N/A')
+          engine        = data.get('engine_requested', 'OSS')
+          skipped_rules = data.get('skipped_rules', [])
+
+          scan_time = round(timing.get('scanning_time', {}).get('total_time', 0), 2)
+
           commit  = os.environ.get('GITHUB_SHA', 'N/A')[:7]
           ref     = os.environ.get('GITHUB_REF_NAME', 'N/A')
           run_url = (
               f"https://github.com/{os.environ.get('GITHUB_REPOSITORY', '')}"
               f"/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}"
           )
-          date = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+          date   = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+          status = 'FAILED' if results or errors else 'PASSED'
+
+          by_sev = {}
+          for r in results:
+              sev = r.get('extra', {}).get('severity', 'UNKNOWN')
+              by_sev.setdefault(sev, []).append(r)
 
           md = []
           md.append('# Semgrep Security Audit Report\n')
-          md.append(f'| | |')
-          md.append(f'|---|---|')
+
+          # Scan info table
+          md.append('## Scan Info\n')
+          md.append('| | |')
+          md.append('|---|---|')
+          md.append(f'| **Status** | {"❌ FAILED" if status == "FAILED" else "✅ PASSED"} |')
           md.append(f'| **Date** | {date} |')
           md.append(f'| **Commit** | `{commit}` |')
           md.append(f'| **Branch** | `{ref}` |')
-          md.append(f'| **Findings** | {len(results)} |')
-          md.append(f'| **Pipeline** | [View run]({run_url}) |\n')
+          md.append(f'| **Pipeline** | [View run]({run_url}) |')
+          md.append(f'| **Semgrep version** | `{version}` |')
+          md.append(f'| **Engine** | {engine} |\n')
 
+          # Scan summary table
+          md.append('## Scan Summary\n')
+          md.append('| | |')
+          md.append('|---|---|')
+          md.append(f'| **Files scanned** | {len(scanned)} |')
+          md.append(f'| **Scan time** | {scan_time}s |')
+          md.append(f'| **Total findings** | {len(results)} |')
+          md.append(f'| **Errors** | {len(errors)} |')
+          md.append(f'| **Skipped rules** | {len(skipped_rules)} |')
+          for sev in ('ERROR', 'WARNING', 'INFO'):
+              count = len(by_sev.get(sev, []))
+              md.append(f'| **{sev.capitalize()} findings** | {count} |')
+          md.append('')
+
+          # Findings
           if not results:
               md.append('## No findings detected\n')
               md.append('The codebase passed all `p/security-audit` rules.')
           else:
-              by_sev = {}
-              for r in results:
-                  sev = r.get('extra', {}).get('severity', 'UNKNOWN')
-                  by_sev.setdefault(sev, []).append(r)
-
+              md.append('## Findings\n')
               for sev in ('ERROR', 'WARNING', 'INFO', 'UNKNOWN'):
                   items = by_sev.get(sev, [])
                   if not items:
                       continue
-                  md.append(f'## {sev} ({len(items)})\n')
+                  md.append(f'### {sev} ({len(items)})\n')
                   for r in items:
-                      path    = r.get('path', 'unknown')
-                      line    = r.get('start', {}).get('line', '?')
-                      rule    = r.get('check_id', 'unknown')
-                      message = r.get('extra', {}).get('message', '').strip()
-                      md.append(f'### `{rule}`')
+                      extra    = r.get('extra', {})
+                      meta     = extra.get('metadata', {})
+                      path     = r.get('path', 'unknown')
+                      line     = r.get('start', {}).get('line', '?')
+                      rule     = r.get('check_id', 'unknown')
+                      message  = extra.get('message', '').strip()
+                      snippet  = extra.get('lines', '').strip()
+                      cwes     = meta.get('cwe', [])
+                      owasps   = meta.get('owasp', [])
+                      refs     = meta.get('references', [])
+                      impact   = meta.get('impact', 'N/A')
+                      likelihood = meta.get('likelihood', 'N/A')
+                      shortlink  = meta.get('shortlink', '')
+
+                      md.append(f'#### `{rule}`')
                       md.append(f'- **File**: `{path}:{line}`')
-                      md.append(f'- **Message**: {message}\n')
+                      md.append(f'- **Impact**: {impact} | **Likelihood**: {likelihood}')
+                      md.append(f'- **Message**: {message}')
+                      if cwes:
+                          md.append(f'- **CWE**: {", ".join(cwes)}')
+                      if owasps:
+                          md.append(f'- **OWASP**: {", ".join(owasps)}')
+                      if snippet:
+                          md.append(f'\n```\n{snippet}\n```')
+                      if shortlink:
+                          md.append(f'\n> Rule details: {shortlink}')
+                      md.append('')
+
+          # Errors section
+          if errors:
+              md.append('## Scan Errors\n')
+              for e in errors:
+                  md.append(f'- `{e.get("path", "N/A")}`: {e.get("message", "")}')
 
           os.makedirs('reports', exist_ok=True)
           with open('reports/semgrep-report.md', 'w') as f:
               f.write('\n'.join(md) + '\n')
 
-          print(f"Report generated: {len(results)} finding(s)")
+          print(f"Report generated: {len(results)} finding(s), status={status}")
           EOF
 
       # Commiter le rapport dans le repo (push uniquement, pas sur les PRs)
