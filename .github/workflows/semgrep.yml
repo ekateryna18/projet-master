@@ -27,7 +27,66 @@ jobs:
                   --error \
                   --json \
                   -o semgrep-results.json \
-                  .
+                  . || true
+
+      # Générer le rapport Markdown
+      - name: Générer le rapport Markdown
+        if: always()
+        run: |
+          python3 - <<'EOF'
+          import json, os, sys
+          from datetime import datetime
+
+          with open('semgrep-results.json') as f:
+              data = json.load(f)
+
+          results = data.get('results', [])
+          commit  = os.environ.get('GITHUB_SHA', 'N/A')[:7]
+          ref     = os.environ.get('GITHUB_REF_NAME', 'N/A')
+          run_url = (
+              f"https://github.com/{os.environ.get('GITHUB_REPOSITORY', '')}"
+              f"/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}"
+          )
+          date = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+
+          md = []
+          md.append('# Semgrep Security Audit Report\n')
+          md.append(f'| | |')
+          md.append(f'|---|---|')
+          md.append(f'| **Date** | {date} |')
+          md.append(f'| **Commit** | `{commit}` |')
+          md.append(f'| **Branch** | `{ref}` |')
+          md.append(f'| **Findings** | {len(results)} |')
+          md.append(f'| **Pipeline** | [View run]({run_url}) |\n')
+
+          if not results:
+              md.append('## No findings detected\n')
+              md.append('The codebase passed all `p/security-audit` rules.')
+          else:
+              by_sev = {}
+              for r in results:
+                  sev = r.get('extra', {}).get('severity', 'UNKNOWN')
+                  by_sev.setdefault(sev, []).append(r)
+
+              for sev in ('ERROR', 'WARNING', 'INFO', 'UNKNOWN'):
+                  items = by_sev.get(sev, [])
+                  if not items:
+                      continue
+                  md.append(f'## {sev} ({len(items)})\n')
+                  for r in items:
+                      path    = r.get('path', 'unknown')
+                      line    = r.get('start', {}).get('line', '?')
+                      rule    = r.get('check_id', 'unknown')
+                      message = r.get('extra', {}).get('message', '').strip()
+                      md.append(f'### `{rule}`')
+                      md.append(f'- **File**: `{path}:{line}`')
+                      md.append(f'- **Message**: {message}\n')
+
+          with open('semgrep-report.md', 'w') as f:
+              f.write('\n'.join(md) + '\n')
+
+          print(f"Report generated: {len(results)} finding(s)")
+          EOF
 
       # Sauvegarder les résultats même si le scan échoue
       - name: Upload des résultats
@@ -35,4 +94,6 @@ jobs:
         if: always()
         with:
           name: semgrep-results
-          path: semgrep-results.json
+          path: |
+            semgrep-results.json
+            semgrep-report.md
