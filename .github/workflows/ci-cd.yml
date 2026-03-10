@@ -63,7 +63,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin ${{ github.ref_name }}
+          git pull --rebase --autostash origin ${{ github.ref_name }}
           git add reports/tests-code-coverage/
           git diff --cached --quiet || git commit -m "chore: update test coverage report [skip ci]"
           git push
