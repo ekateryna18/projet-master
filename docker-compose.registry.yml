@@ -14,38 +14,44 @@ services:
       - ./auth/htpasswd:/auth/htpasswd:ro
       - ./registry/config.yml:/etc/docker/registry/config.yml:ro
     networks:
-      - traefik-net        
+      - admin_proxy         
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.registry.rule=Host(`registry.example.com`)"
+      - "traefik.http.routers.registry.rule=Host(`master-pr-katy.a3n.fr`) && PathPrefix(`/v2`)"
       - "traefik.http.routers.registry.entrypoints=websecure"
       - "traefik.http.routers.registry.tls=true"
-      - "traefik.http.routers.registry.tls.certresolver=le"
+      - "traefik.http.routers.registry.tls.certresolver=letsencrypt"
       - "traefik.http.services.registry.loadbalancer.server.port=5000"
-      - "traefik.http.routers.registry.middlewares=registry-ratelimit@docker" 
+      - "traefik.http.routers.registry.middlewares=registry-ratelimit@docker"
       - "traefik.http.middlewares.registry-ratelimit.ratelimit.average=20"
       - "traefik.http.middlewares.registry-ratelimit.ratelimit.burst=50"
+      - "traefik.http.routers.registry.priority=10"
 
   registry-ui:
     image: joxit/docker-registry-ui:latest
     container_name: katy-registry-ui
+    ports:
+      - "8080:80"
     restart: unless-stopped
     environment:
       - REGISTRY_TITLE=Registry-Privé
-      - REGISTRY_URL=http://registry:5000
+      - REGISTRY_URL=https://master-pr-katy.a3n.fr
       - DELETE_IMAGES=true
+      - NGINX_PROXY_PASS_URL=https://master-pr-katy.a3n.fr
+      - SINGLE_REGISTRY=true
     networks:
-      - traefik-net       
+      - admin_proxy     
     depends_on:
       - registry
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.registry-ui.rule=Host(`registry-ui.example.com`)"
+      - "traefik.http.routers.registry-ui.rule=Host(`master-pr-katy.a3n.fr`)"
       - "traefik.http.routers.registry-ui.entrypoints=websecure"
       - "traefik.http.routers.registry-ui.tls=true"
-      - "traefik.http.routers.registry-ui.tls.certresolver=le"
+      - "traefik.http.routers.registry-ui.tls.certresolver=letsencrypt"
       - "traefik.http.services.registry-ui.loadbalancer.server.port=80"
+      - "traefik.http.routers.registry-ui.priority=1"
 
 networks:
-  traefik-net:
+  admin_proxy:
     external: true    
