@@ -58,11 +58,33 @@ jobs:
       - name: Run tests
         run: cd app && npm test
 
+  # ─── SEMGREP ───────────────────────────────────────────────────────────────
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    needs: lint
+    container:
+      image: returntocorp/semgrep
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: semgrep --config=p/security-audit --error --json -o semgrep.json .
+
+      - name: Upload Semgrep report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: semgrep-report
+          path: semgrep.json
+          retention-days: 7
+
   # ─── BUILD + PUSH ──────────────────────────────────────────────────────────
   build-and-push:
     name: Build & Push
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, semgrep]
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
